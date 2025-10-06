@@ -12,6 +12,55 @@ StepSequencerAudioProcessor::~StepSequencerAudioProcessor()
 {
 }
 
+// Define NoteDivision struct
+struct NoteDivision
+{
+    const char *label;
+    float multiplier; // in beats relative to quarter note
+};
+
+// List of musical note divisions, relative to 1 quarter note
+static const NoteDivision noteDivisions[] = {
+    {"1/64", 0.0625f},
+    {"1/64T", 0.0417f},
+    {"1/32", 0.125f},
+    {"1/32T", 0.0833f},
+    {"1/16", 0.25f},
+    {"1/16T", 0.1667f},
+    {"1/8", 0.5f},
+    {"1/8T", 0.333f},
+    {"1/4", 1.0f},
+    {"1/4T", 0.666f},
+    {"1/2", 2.0f},
+    {"1/2T", 1.333f},
+    {"1 bar", 4.0f}};
+
+// Convert ms to musical label based on BPM
+juce::String getMusicalLabel(float ms, float bpm)
+{
+    // Convert ms to beats
+    const float beatDurationMs = 60000.0f / bpm;
+    const float beats = ms / beatDurationMs;
+
+    const NoteDivision *closest = nullptr;
+    float minError = std::numeric_limits<float>::max();
+
+    for (const auto &div : noteDivisions)
+    {
+        float error = std::abs(div.multiplier - beats);
+        if (error < minError)
+        {
+            minError = error;
+            closest = &div;
+        }
+    }
+
+    if (closest)
+        return juce::String(ms, 1) + " ms (" + closest->label + ")";
+    else
+        return juce::String(ms, 1) + " ms";
+}
+
 juce::AudioProcessorValueTreeState::ParameterLayout StepSequencerAudioProcessor::createParameterLayout()
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
@@ -27,35 +76,25 @@ juce::AudioProcessorValueTreeState::ParameterLayout StepSequencerAudioProcessor:
             juce::AudioParameterFloatAttributes()
                 .withLabel("st")
                 .withStringFromValueFunction([](float value, int)
-                                             { return juce::String(value, 1) + " st"; })));
+                                             { return juce::String(value, 1); })));
     }
 
-    // Rate parameter (note divisions) - now includes triplets
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID("rate", 1),
         "Rate",
-        juce::NormalisableRange<float>(0.25f, 8.0f, 0.01f),
-        2.0f,
+        juce::NormalisableRange<float>(10.0f, 500.0f, 0.1f), // reduced max to 500 ms
+        100.0f,                                              // default value somewhere in the lower range
         juce::AudioParameterFloatAttributes()
-            .withStringFromValueFunction([](float value, int) -> juce::String
+            .withStringFromValueFunction([this](float value, int)
                                          {
-                // Check for triplets first
-                if (std::abs(value - 1.333f) < 0.02f) return juce::String("1/4T");
-                if (std::abs(value - 2.666f) < 0.02f) return juce::String("1/8T");
-                if (std::abs(value - 5.333f) < 0.02f) return juce::String("1/16T");
-                
-                // Regular divisions
-                if (value >= 4.0f) return "1/" + juce::String((int)(value * 4)) + " note";
-                else if (value >= 2.0f) return "1/" + juce::String((int)(value * 2)) + " note";
-                else if (value >= 1.0f) return juce::String("1/4 note");
-                else if (value >= 0.5f) return juce::String("1/2 note");
-                else return juce::String("Whole"); })));
+            float bpm = currentBpm.load();
+            return getMusicalLabel(value, bpm); })));
 
-    // Gate length (can go over 100% for overlapping notes/glide)
+    // Gate length (up to 100%, but we'll extend it slightly for glide when at max)
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID("gate", 1),
         "Gate",
-        juce::NormalisableRange<float>(0.01f, 2.0f, 0.01f),
+        juce::NormalisableRange<float>(0.01f, 1.0f, 0.01f),
         0.5f,
         juce::AudioParameterFloatAttributes()
             .withLabel("%")
@@ -105,14 +144,20 @@ void StepSequencerAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
     juce::ScopedNoDenormals noDenormals;
     buffer.clear();
 
-    // Get tempo info
     if (auto *playHead = getPlayHead())
     {
         if (auto posInfo = playHead->getPosition())
+        {
             lastPosInfo = *posInfo;
+
+            if (auto bpmOpt = lastPosInfo.getBpm())
+            {
+                currentBpm.store(*bpmOpt); // Use atomic store
+            }
+        }
     }
 
-    double bpm = lastPosInfo.getBpm().orFallback(120.0);
+    double bpm = currentBpm.load();
     double sampleRate = getSampleRate();
 
     auto rateParam = apvts.getRawParameterValue("rate")->load();
@@ -120,7 +165,7 @@ void StepSequencerAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
     auto glideEnable = apvts.getRawParameterValue("glide_enable")->load() > 0.5f;
     auto glideTimeMs = apvts.getRawParameterValue("glide_time")->load();
 
-    stepLengthInSamples = calculateStepLength(sampleRate, bpm, rateParam);
+    stepLengthInSamples = calculateStepLength(sampleRate, rateParam);
 
     // Calculate glide rate (frequency change per sample)
     if (glideEnable && glideTimeMs > 0.0f)
@@ -234,25 +279,18 @@ void StepSequencerAudioProcessor::updateFrequency()
         currentFrequency = targetFrequency;
 }
 
-double StepSequencerAudioProcessor::calculateStepLength(double sampleRate, double bpm, float rateParam)
+double StepSequencerAudioProcessor::calculateStepLength(double sampleRate, float rateMs)
 {
-    // Calculate samples per quarter note
-    double samplesPerQuarterNote = (60.0 / bpm) * sampleRate;
+    // Convert ms to seconds
+    double seconds = rateMs / 1000.0;
 
-    // rateParam: 2.0 = eighth note = 0.5 quarter notes
-    // rateParam: 1.0 = quarter note = 1.0 quarter notes
-    // rateParam: 0.5 = half note = 2.0 quarter notes
-    double quarterNotes = 1.0 / rateParam;
-
-    return samplesPerQuarterNote * quarterNotes;
+    // Convert to samples
+    return seconds * sampleRate;
 }
 
 juce::AudioProcessorEditor *StepSequencerAudioProcessor::createEditor()
 {
-    // Use generic editor which automatically creates UI for all APVTS parameters
-    auto *editor = new juce::GenericAudioProcessorEditor(*this);
-    editor->setSize(400, 600); // Make it taller so all params are visible
-    return editor;
+    return new StepSequencerAudioProcessorEditor(*this);
 }
 
 void StepSequencerAudioProcessor::getStateInformation(juce::MemoryBlock &destData)

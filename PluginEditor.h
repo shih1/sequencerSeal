@@ -3,52 +3,44 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 
-// Using GenericAudioProcessorEditor for now
-// This will automatically create UI for all parameters
-// class PitchVelocityEditor : public juce::AudioProcessorEditor, private juce::Timer
-// {
-// public:
-//     PitchVelocityEditor(PitchVelocityProcessor &);
-//     ~PitchVelocityEditor() override;
+class StepSequencerAudioProcessorEditor : public juce::AudioProcessorEditor,
+                                          private juce::Timer
+{
+public:
+    StepSequencerAudioProcessorEditor(StepSequencerAudioProcessor &);
+    ~StepSequencerAudioProcessorEditor() override;
 
-//     void paint(juce::Graphics &) override;
-//     void resized() override;
+    void paint(juce::Graphics &) override;
+    void resized() override;
+    void timerCallback() override;
 
-// private:
-//     void timerCallback() override;
-//     void drawKeyboard(juce::Graphics &g, juce::Rectangle<float> area);
-//     void drawVelocityBars(juce::Graphics &g, juce::Rectangle<float> area);
-//     void drawCurveOverlay(juce::Graphics &g, juce::Rectangle<float> area);
+private:
+    StepSequencerAudioProcessor &audioProcessor;
 
-//     juce::Colour getVelocityColour(float normalizedVelocity);
-//     bool isBlackKey(int noteNumber);
-//     float getKeyX(int noteNumber, float keyboardWidth);
+    // Step sequencer knobs and LEDs
+    static constexpr int NUM_STEPS = 8;
+    std::array<juce::Slider, NUM_STEPS> stepSliders;
+    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, NUM_STEPS> stepAttachments;
+    std::array<juce::Label, NUM_STEPS> stepLabels;
 
-//     PitchVelocityProcessor &audioProcessor;
+    // Config section
+    juce::Slider rateSlider;
+    juce::Label rateLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> rateAttachment;
 
-//     juce::Slider minVelocitySlider;
-//     juce::Slider maxVelocitySlider;
-//     juce::Slider curveSlider;
-//     juce::ToggleButton bypassButton;
+    juce::Slider gateSlider;
+    juce::Label gateLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> gateAttachment;
 
-//     juce::Label minVelocityLabel;
-//     juce::Label maxVelocityLabel;
-//     juce::Label curveLabel;
-//     juce::Label titleLabel;
+    juce::ToggleButton glideToggle;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> glideAttachment;
 
-//     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> minVelAttachment;
-//     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> maxVelAttachment;
-//     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> curveAttachment;
-//     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttachment;
+    juce::Slider glideTimeSlider;
+    juce::Label glideTimeLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> glideTimeAttachment;
 
-//     // Active notes tracking
-//     struct NoteInfo
-//     {
-//         int velocity;
-//         float fadeAmount;
-//         NoteInfo() : velocity(0), fadeAmount(0.0f) {}
-//     };
-//     std::array<NoteInfo, 128> activeNotes;
+    // Current step indicator (for LED)
+    int lastDisplayedStep = -1;
 
-//     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PitchVelocityEditor)
-// };
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(StepSequencerAudioProcessorEditor)
+};

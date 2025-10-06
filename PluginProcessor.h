@@ -33,6 +33,10 @@ public:
 
     juce::AudioProcessorValueTreeState &getValueTreeState() { return apvts; }
 
+    // Get current step for UI
+    int getCurrentStep() const { return currentStep; }
+    bool getIsPlaying() const { return isNoteOn; }
+
 private:
     static constexpr int NUM_STEPS = 8;
 
@@ -60,7 +64,9 @@ private:
     void advanceStep();
     void resetSequencer();
     void updateFrequency();
-    double calculateStepLength(double sampleRate, double bpm, float rateParam);
+    double calculateStepLength(double sampleRate, float rateParam);
+
+    std::atomic<float> currentBpm{120.0f}; // Default to 120 BPM
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(StepSequencerAudioProcessor)
 };
