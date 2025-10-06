@@ -1,0 +1,10 @@
+
+[submodule "ext/juce"]
+	path = ext/juce
+	url = https://github.com/juce-framework/JUCE.git
+[submodule "drowaudio"]
+	path = drowaudio
+	url = https://github.com/drowaudio/drowaudio.git
+[submodule "LUFSMeter"]
+	path = LUFSMeter
+	url = git@github.com:klangfreund/LUFSMeter.git

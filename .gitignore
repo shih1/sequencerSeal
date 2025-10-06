@@ -1,0 +1,8 @@
+.DS_Store
+.vscode
+build
+dev0
+.DS_Store
+pkg-root
+dist
+notarize-temp

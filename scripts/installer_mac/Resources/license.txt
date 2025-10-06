@@ -1,0 +1,22 @@
+Proprietary License Agreement
+
+Copyright (c) 2025 pixel.dsp. All rights reserved.
+
+License Grant: Pixel.dsp grants you a non-exclusive, non-transferable, limited license to use the software, including any accompanying documentation, in accordance with the terms of this agreement. This license is granted only for personal, non-commercial use unless otherwise specified.
+
+Restrictions:
+
+You may not copy, distribute, or modify the software without prior written consent from Pixel.dsp.
+You may not reverse engineer, decompile, or disassemble the software, except to the extent permitted by applicable law.
+You may not sublicense or transfer your rights under this license.
+Ownership: All intellectual property rights in the software are owned by Pixel.dsp and are protected by copyright, trademark, and other applicable laws. This license does not grant you any ownership rights in the software.
+
+Term and Termination: This license is effective until terminated. You may terminate it by destroying all copies of the software. Pixel.dsp may terminate the license if you violate any of its terms, in which case you must immediately cease using the software and destroy all copies.
+
+Warranty Disclaimer: The software is provided "as is," without warranty of any kind, either express or implied, including but not limited to the implied warranties of merchantability and fitness for a particular purpose. Pixel.dsp does not warrant that the software will be error-free or uninterrupted.
+
+Limitation of Liability: In no event will Pixel.dsp be liable for any indirect, incidental, special, or consequential damages, or for any loss of profit, revenue, or data, arising from your use or inability to use the software.
+
+Governing Law: This agreement shall be governed by the laws of Earth, without regard to its conflict of laws principles.
+
+By installing or using the software, you agree to the terms of this license.

@@ -1,0 +1,15 @@
+# notarize_config.yaml
+apple_id: "your-apple-id@example.com" # Your Apple ID
+app_specific_password: "your-app-specific-password" # App-specific password generated from Apple ID
+team_id: "your-team-id" # Your Apple Developer Team ID
+developer_id_application: "Developer ID Application: Your Name (YOURTEAMID)" # Developer ID for applications
+developer_id_installer: "Developer ID Installer: Your Name (YOURTEAMID)" # Developer ID for installers
+
+# Paths for plugin notarization
+path_to_unsigned_vst: "/path/to/unsigned/plugin.vst" # Path to unsigned VST plugin
+path_to_unsigned_au: "/path/to/unsigned/plugin.au" # Path to unsigned AU plugin
+output_zip_path: "/path/to/output/signed_plugins.zip" # Path to save the signed and zipped plugins
+
+# Paths for installer notarization
+input_pkg: "/path/to/unsigned/installer.pkg" # Path to unsigned installer package
+output_signed_pkg: "/path/to/output/signed_installer.pkg" # Path to save the signed installer package

@@ -1,0 +1,15 @@
+# notarize_config.yaml
+apple_id: "christophershih2@gmail.com" # Your Apple ID
+app_specific_password: "znqd-pijw-brxi-tmrq" # App-specific password generated from Apple ID
+team_id: "8NV24GUWGA" # Your Apple Developer Team ID
+developer_id_application: "Developer ID Application: Christopher Jadee Shih (8NV24GUWGA)" # Developer ID for applications
+developer_id_installer: "Developer ID Installer: Christopher Jadee Shih (8NV24GUWGA)" # Developer ID for installers
+
+# Paths for plugin notarization
+path_to_unsigned_vst: "./pixel.clip.vst3" # Path to unsigned VST plugin
+path_to_unsigned_au: "./pixel.clip.component" # Path to unsigned AU plugin
+output_zip_path: "./Archive.zip" # Path to save the signed and zipped plugins
+
+# Paths for installer notarization
+input_pkg: "./pixel.clip_installer.pkg" # Path to unsigned installer package
+output_signed_pkg: "./pixel.clip_installer-signed.pkg" # Path to save the signed installer package

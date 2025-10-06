@@ -1,0 +1,20 @@
+#developerID: "Developer ID Application: Christopher Jadee Shih (8NV24GUWGA)"
+#keychainCredentialName: "PixelAppCredentials"
+#pathToVST: "/path/to/your/plugin.vst"
+
+# parameters needed to codesign the AU and VST3
+developer_id_application: "Developer ID Application: Christopher Jadee Shih (8NV24GUWGA)"
+
+apple_id: "christophershih2@gmail.com"
+keychain_credential_name: "PixelAppCredentials"
+path_to_unsigned_vst: "./BuiltPlugins/pixel.clip.vst3"
+path_to_unsigned_au: "./BuiltPlugins/pixel.clip.component"
+team_id: "8NV24GUWGA"
+team_password: "znqd-pijw-brxi-tmrq"
+app_specific_password: "znqd-pijw-brxi-tmrq"
+output_zip_path: "archive.zip"
+#
+developer_id_installer: "Developer ID Installer: Christopher Jadee Shih (8NV24GUWGA)"
+# check - can keychain credentials be reused between application and installer?
+input_pkg: "./installer_mac/pixel-clip-1.0.0.pkg"
+output_signed_pkg: "pixel-clip-1.0.0.pkg"
