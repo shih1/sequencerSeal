@@ -1,21 +1,21 @@
 cmake_minimum_required(VERSION 3.15)
 
-project(PitchVelocityRemapper VERSION 1.0.0)
+project(StepSequencer VERSION 1.0.0)
 
 # Add JUCE as a subdirectory (assuming you have JUCE in a folder called JUCE)
 add_subdirectory(ext/juce)
 add_compile_definitions(JUCE_VST3_CAN_REPLACE_VST2=0)
 
 # Create our plugin
-juce_add_plugin(PitchVelocityRemapper
+juce_add_plugin(StepSequencer
     PLUGIN_MANUFACTURER_CODE Shih
-    PLUGIN_CODE bttr
+    PLUGIN_CODE Seq8
     FORMATS AU VST3 Standalone
-    PRODUCT_NAME "BetterVelocity"
+    PRODUCT_NAME "8 Step Sequencer"
     COMPANY_NAME "YourCompany"
     IS_SYNTH TRUE
     NEEDS_MIDI_INPUT TRUE
-    NEEDS_MIDI_OUTPUT TRUE
+    NEEDS_MIDI_OUTPUT FALSE
     IS_MIDI_EFFECT FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
     COPY_PLUGIN_AFTER_BUILD TRUE
@@ -23,15 +23,15 @@ juce_add_plugin(PitchVelocityRemapper
 )
 
 # Add source files
-juce_generate_juce_header(PitchVelocityRemapper)
+juce_generate_juce_header(StepSequencer)
 
-target_sources(PitchVelocityRemapper
+target_sources(StepSequencer
     PRIVATE
         PluginProcessor.cpp
         PluginEditor.cpp)
 
 # Link required JUCE modules 
-target_link_libraries(PitchVelocityRemapper
+target_link_libraries(StepSequencer
     PRIVATE
         juce::juce_audio_utils
         juce::juce_audio_processors
@@ -42,5 +42,5 @@ target_link_libraries(PitchVelocityRemapper
         juce::juce_recommended_warning_flags)
 
 # Binary data if needed (for resources)
-# juce_add_binary_data(PitchVelocityRemapperData SOURCES icon.png)
-# target_link_libraries(PitchVelocityRemapper PRIVATE PitchVelocityRemapperData)
+# juce_add_binary_data(StepSequencerData SOURCES icon.png)
+# target_link_libraries(StepSequencer PRIVATE StepSequencerData)

@@ -1,63 +1,66 @@
-// PluginProcessor.h
 #pragma once
 
 #include <JuceHeader.h>
 
-class PitchVelocityProcessor : public juce::AudioProcessor
+class StepSequencerAudioProcessor : public juce::AudioProcessor
 {
 public:
-    PitchVelocityProcessor();
-    ~PitchVelocityProcessor() override;
+    StepSequencerAudioProcessor();
+    ~StepSequencerAudioProcessor() override;
 
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
     void releaseResources() override;
-
-#ifndef JucePlugin_PreferredChannelConfigurations
     bool isBusesLayoutSupported(const BusesLayout &layouts) const override;
-#endif
-
     void processBlock(juce::AudioBuffer<float> &, juce::MidiBuffer &) override;
 
     juce::AudioProcessorEditor *createEditor() override;
-    bool hasEditor() const override;
+    bool hasEditor() const override { return true; }
 
-    const juce::String getName() const override;
+    const juce::String getName() const override { return JucePlugin_Name; }
+    bool acceptsMidi() const override { return true; }
+    bool producesMidi() const override { return false; }
+    bool isMidiEffect() const override { return false; }
+    double getTailLengthSeconds() const override { return 0.0; }
 
-    bool acceptsMidi() const override;
-    bool producesMidi() const override;
-    bool isMidiEffect() const override;
-    double getTailLengthSeconds() const override;
-
-    int getNumPrograms() override;
-    int getCurrentProgram() override;
-    void setCurrentProgram(int index) override;
-    const juce::String getProgramName(int index) override;
-    void changeProgramName(int index, const juce::String &newName) override;
+    int getNumPrograms() override { return 1; }
+    int getCurrentProgram() override { return 0; }
+    void setCurrentProgram(int index) override {}
+    const juce::String getProgramName(int index) override { return {}; }
+    void changeProgramName(int index, const juce::String &newName) override {}
 
     void getStateInformation(juce::MemoryBlock &destData) override;
     void setStateInformation(const void *data, int sizeInBytes) override;
 
-    // Parameter access
-    juce::AudioProcessorValueTreeState &getParameters() { return parameters; }
-
-    // Parameter IDs
-    static const juce::String MIN_VELOCITY_ID;
-    static const juce::String MAX_VELOCITY_ID;
-    static const juce::String CURVE_ID;
-    static const juce::String BYPASS_ID;
-
-    // helper to editor
-    void processMidiForDisplay(juce::MidiKeyboardState &keyboardState, int numSamples);
-
-    juce::MidiKeyboardState keyboardState; // Add this public member
-    std::array<std::atomic<int>, 128> lastNoteVelocities;
+    juce::AudioProcessorValueTreeState &getValueTreeState() { return apvts; }
 
 private:
-    juce::MidiBuffer currentMidiMessages;
-    juce::CriticalSection midiMonitorLock;
-    juce::AudioProcessorValueTreeState parameters;
+    static constexpr int NUM_STEPS = 8;
 
+    juce::AudioProcessorValueTreeState apvts;
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PitchVelocityProcessor)
+    // Synth state
+    bool isNoteOn = false;
+    int baseNote = 60;
+    float phase = 0.0f;
+    float currentFrequency = 440.0f;
+    float targetFrequency = 440.0f;
+    float glideRate = 0.0f;
+
+    // Sequencer state
+    int currentStep = 0;
+    double samplesUntilNextStep = 0.0;
+    double stepLengthInSamples = 0.0;
+    double gateOffSamples = 0.0;
+    bool gateIsOn = false;
+
+    // Tempo sync
+    juce::AudioPlayHead::PositionInfo lastPosInfo;
+
+    void advanceStep();
+    void resetSequencer();
+    void updateFrequency();
+    double calculateStepLength(double sampleRate, double bpm, float rateParam);
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(StepSequencerAudioProcessor)
 };

@@ -1,241 +1,276 @@
-// PluginProcessor.cpp
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
-// Parameter IDs
-const juce::String PitchVelocityProcessor::MIN_VELOCITY_ID = "minVel";
-const juce::String PitchVelocityProcessor::MAX_VELOCITY_ID = "maxVel";
-const juce::String PitchVelocityProcessor::CURVE_ID = "curve";
-const juce::String PitchVelocityProcessor::BYPASS_ID = "bypass";
-
-PitchVelocityProcessor::PitchVelocityProcessor()
+StepSequencerAudioProcessor::StepSequencerAudioProcessor()
     : AudioProcessor(BusesProperties()
-                         .withInput("Input", juce::AudioChannelSet::stereo(), true)
-                         .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
-      parameters(*this, nullptr, "Parameters", createParameterLayout())
-{
-    for (auto &vel : lastNoteVelocities)
-        vel.store(0);
-}
-
-PitchVelocityProcessor::~PitchVelocityProcessor()
+                         .withOutput("Output", juce::AudioChannelSet::mono(), true)),
+      apvts(*this, nullptr, "Parameters", createParameterLayout())
 {
 }
 
-juce::AudioProcessorValueTreeState::ParameterLayout PitchVelocityProcessor::createParameterLayout()
+StepSequencerAudioProcessor::~StepSequencerAudioProcessor()
 {
-    juce::AudioProcessorValueTreeState::ParameterLayout layout;
+}
 
-    layout.add(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID{MIN_VELOCITY_ID, 1},
-        "Min Velocity",
-        juce::NormalisableRange<float>(1.0f, 127.0f, 1.0f),
-        10.0f));
+juce::AudioProcessorValueTreeState::ParameterLayout StepSequencerAudioProcessor::createParameterLayout()
+{
+    std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
 
-    layout.add(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID{MAX_VELOCITY_ID, 1},
-        "Max Velocity",
-        juce::NormalisableRange<float>(1.0f, 127.0f, 1.0f),
-        127.0f));
+    // 8 step pitch parameters (±12 semitones)
+    for (int i = 0; i < NUM_STEPS; ++i)
+    {
+        params.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID("step" + juce::String(i), 1),
+            "Step " + juce::String(i + 1),
+            juce::NormalisableRange<float>(-12.0f, 12.0f, 0.01f),
+            0.0f,
+            juce::AudioParameterFloatAttributes()
+                .withLabel("st")
+                .withStringFromValueFunction([](float value, int)
+                                             { return juce::String(value, 1) + " st"; })));
+    }
 
-    layout.add(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID{CURVE_ID, 1},
-        "Curve",
-        juce::NormalisableRange<float>(0.1f, 10.0f, 0.01f, 0.5f), // Added skew for better control
-        1.0f));
+    // Rate parameter (note divisions) - now includes triplets
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("rate", 1),
+        "Rate",
+        juce::NormalisableRange<float>(0.25f, 8.0f, 0.01f),
+        2.0f,
+        juce::AudioParameterFloatAttributes()
+            .withStringFromValueFunction([](float value, int) -> juce::String
+                                         {
+                // Check for triplets first
+                if (std::abs(value - 1.333f) < 0.02f) return juce::String("1/4T");
+                if (std::abs(value - 2.666f) < 0.02f) return juce::String("1/8T");
+                if (std::abs(value - 5.333f) < 0.02f) return juce::String("1/16T");
+                
+                // Regular divisions
+                if (value >= 4.0f) return "1/" + juce::String((int)(value * 4)) + " note";
+                else if (value >= 2.0f) return "1/" + juce::String((int)(value * 2)) + " note";
+                else if (value >= 1.0f) return juce::String("1/4 note");
+                else if (value >= 0.5f) return juce::String("1/2 note");
+                else return juce::String("Whole"); })));
 
-    layout.add(std::make_unique<juce::AudioParameterBool>(
-        juce::ParameterID{BYPASS_ID, 1},
-        "Bypass",
+    // Gate length (can go over 100% for overlapping notes/glide)
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("gate", 1),
+        "Gate",
+        juce::NormalisableRange<float>(0.01f, 2.0f, 0.01f),
+        0.5f,
+        juce::AudioParameterFloatAttributes()
+            .withLabel("%")
+            .withStringFromValueFunction([](float value, int)
+                                         { return juce::String((int)(value * 100)) + "%"; })));
+
+    // Glide enable
+    params.push_back(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID("glide_enable", 1),
+        "Glide",
         false));
 
-    return layout;
+    // Glide time in milliseconds
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("glide_time", 1),
+        "Glide Time",
+        juce::NormalisableRange<float>(1.0f, 1000.0f, 1.0f, 0.3f),
+        50.0f,
+        juce::AudioParameterFloatAttributes()
+            .withLabel("ms")
+            .withStringFromValueFunction([](float value, int)
+                                         { return juce::String((int)value) + " ms"; })));
+
+    return {params.begin(), params.end()};
 }
 
-const juce::String PitchVelocityProcessor::getName() const
-{
-    return JucePlugin_Name;
-}
-
-bool PitchVelocityProcessor::acceptsMidi() const
-{
-    return true;
-}
-
-bool PitchVelocityProcessor::producesMidi() const
-{
-    return true;
-}
-
-bool PitchVelocityProcessor::isMidiEffect() const
-{
-    return true;
-}
-
-double PitchVelocityProcessor::getTailLengthSeconds() const
-{
-    return 0.0;
-}
-
-int PitchVelocityProcessor::getNumPrograms()
-{
-    return 1;
-}
-
-int PitchVelocityProcessor::getCurrentProgram()
-{
-    return 0;
-}
-
-void PitchVelocityProcessor::setCurrentProgram(int index)
-{
-    juce::ignoreUnused(index);
-}
-
-const juce::String PitchVelocityProcessor::getProgramName(int index)
-{
-    juce::ignoreUnused(index);
-    return {};
-}
-
-void PitchVelocityProcessor::changeProgramName(int index, const juce::String &newName)
-{
-    juce::ignoreUnused(index, newName);
-}
-
-void PitchVelocityProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
+void StepSequencerAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
     juce::ignoreUnused(sampleRate, samplesPerBlock);
+    phase = 0.0f;
+    currentFrequency = 440.0f;
+    targetFrequency = 440.0f;
+    resetSequencer();
 }
 
-void PitchVelocityProcessor::releaseResources()
+void StepSequencerAudioProcessor::releaseResources()
 {
 }
 
-#ifndef JucePlugin_PreferredChannelConfigurations
-bool PitchVelocityProcessor::isBusesLayoutSupported(const BusesLayout &layouts) const
+bool StepSequencerAudioProcessor::isBusesLayoutSupported(const BusesLayout &layouts) const
 {
-    // For Ableton compatibility, always accept stereo layouts
-    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
-        return false;
-
-    if (layouts.getMainOutputChannelSet() != layouts.getMainInputChannelSet())
-        return false;
-
-    return true;
+    return layouts.getMainOutputChannelSet() == juce::AudioChannelSet::mono();
 }
-#endif
-void PitchVelocityProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::MidiBuffer &midiMessages)
+
+void StepSequencerAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::MidiBuffer &midiMessages)
 {
-    // Get parameter values
-    bool bypass = false;
-    float minVel = 10.0f;
-    float maxVel = 127.0f;
-    float curveValue = 1.0f;
+    juce::ScopedNoDenormals noDenormals;
+    buffer.clear();
 
-    if (auto *bypassParam = dynamic_cast<juce::AudioParameterBool *>(parameters.getParameter(BYPASS_ID)))
-        bypass = bypassParam->get();
+    // Get tempo info
+    if (auto *playHead = getPlayHead())
+    {
+        if (auto posInfo = playHead->getPosition())
+            lastPosInfo = *posInfo;
+    }
 
-    if (auto *minVelParam = dynamic_cast<juce::AudioParameterFloat *>(parameters.getParameter(MIN_VELOCITY_ID)))
-        minVel = minVelParam->get();
+    double bpm = lastPosInfo.getBpm().orFallback(120.0);
+    double sampleRate = getSampleRate();
 
-    if (auto *maxVelParam = dynamic_cast<juce::AudioParameterFloat *>(parameters.getParameter(MAX_VELOCITY_ID)))
-        maxVel = maxVelParam->get();
+    auto rateParam = apvts.getRawParameterValue("rate")->load();
+    auto gateParam = apvts.getRawParameterValue("gate")->load();
+    auto glideEnable = apvts.getRawParameterValue("glide_enable")->load() > 0.5f;
+    auto glideTimeMs = apvts.getRawParameterValue("glide_time")->load();
 
-    if (auto *curveParam = dynamic_cast<juce::AudioParameterFloat *>(parameters.getParameter(CURVE_ID)))
-        curveValue = curveParam->get();
+    stepLengthInSamples = calculateStepLength(sampleRate, bpm, rateParam);
 
-    // Update keyboard state with incoming MIDI
-    keyboardState.processNextMidiBuffer(midiMessages, 0, buffer.getNumSamples(), true);
+    // Calculate glide rate (frequency change per sample)
+    if (glideEnable && glideTimeMs > 0.0f)
+    {
+        float glideTimeSamples = (glideTimeMs / 1000.0f) * sampleRate;
+        glideRate = 1.0f / glideTimeSamples;
+    }
+    else
+    {
+        glideRate = 1.0f; // Instant change
+    }
 
-    if (bypass || midiMessages.isEmpty())
-        return;
-
-    juce::MidiBuffer processedMidi;
-
+    // Process MIDI
     for (const auto metadata : midiMessages)
     {
-        auto message = metadata.getMessage();
+        auto msg = metadata.getMessage();
 
-        if (message.isNoteOn())
+        if (msg.isNoteOn())
         {
-            int noteNumber = message.getNoteNumber();
-
-            float normalized = noteNumber / 127.0f;
-            normalized = std::pow(normalized, curveValue);
-
-            int newVelocity = static_cast<int>(minVel + (maxVel - minVel) * normalized);
-            newVelocity = juce::jlimit(1, 127, newVelocity);
-
-            // STORE THE VELOCITY FOR THE EDITOR
-            lastNoteVelocities[noteNumber].store(newVelocity);
-
-            auto newMessage = juce::MidiMessage::noteOn(
-                message.getChannel(),
-                noteNumber,
-                static_cast<juce::uint8>(newVelocity));
-
-            processedMidi.addEvent(newMessage, metadata.samplePosition);
+            isNoteOn = true;
+            baseNote = msg.getNoteNumber();
+            resetSequencer();
+            gateIsOn = true;
+            gateOffSamples = stepLengthInSamples * gateParam;
         }
-        else if (message.isNoteOff())
+        else if (msg.isNoteOff())
         {
-            // Clear velocity on note off
-            lastNoteVelocities[message.getNoteNumber()].store(0);
-            processedMidi.addEvent(message, metadata.samplePosition);
-        }
-        else
-        {
-            processedMidi.addEvent(message, metadata.samplePosition);
+            isNoteOn = false;
+            gateIsOn = false;
         }
     }
 
-    midiMessages.swapWith(processedMidi);
+    if (!isNoteOn)
+        return;
 
-    // Store MIDI for the editor to read
+    auto *outputData = buffer.getWritePointer(0);
+
+    for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
     {
-        const juce::ScopedLock sl(midiMonitorLock);
-        currentMidiMessages.clear();
-        currentMidiMessages.addEvents(midiMessages, 0, buffer.getNumSamples(), 0);
+        // Check if we need to advance to next step
+        if (samplesUntilNextStep <= 0.0)
+        {
+            advanceStep();
+            samplesUntilNextStep = stepLengthInSamples;
+            gateOffSamples = stepLengthInSamples * gateParam;
+            gateIsOn = true;
+        }
+
+        // Check gate
+        if (gateOffSamples <= 0.0)
+            gateIsOn = false;
+
+        // Apply glide to frequency
+        if (currentFrequency != targetFrequency)
+        {
+            if (glideRate >= 1.0f)
+            {
+                currentFrequency = targetFrequency;
+            }
+            else
+            {
+                float diff = targetFrequency - currentFrequency;
+                currentFrequency += diff * glideRate;
+
+                // Snap to target if very close
+                if (std::abs(targetFrequency - currentFrequency) < 0.1f)
+                    currentFrequency = targetFrequency;
+            }
+        }
+
+        // Generate saw wave
+        float output = 0.0f;
+        if (gateIsOn)
+        {
+            output = (phase * 2.0f - 1.0f) * 0.3f; // Saw wave with volume scaling
+        }
+
+        outputData[sample] = output;
+
+        // Update phase
+        phase += currentFrequency / (float)sampleRate;
+        if (phase >= 1.0f)
+            phase -= 1.0f;
+
+        samplesUntilNextStep -= 1.0;
+        gateOffSamples -= 1.0;
     }
 }
 
-void PitchVelocityProcessor::processMidiForDisplay(juce::MidiKeyboardState &keyboardState, int numSamples)
+void StepSequencerAudioProcessor::advanceStep()
 {
-    const juce::ScopedLock sl(midiMonitorLock);
-    keyboardState.processNextMidiBuffer(currentMidiMessages, 0, numSamples, true);
+    currentStep = (currentStep + 1) % NUM_STEPS;
+    updateFrequency();
 }
 
-bool PitchVelocityProcessor::hasEditor() const
+void StepSequencerAudioProcessor::resetSequencer()
 {
-    return true;
+    currentStep = -1;           // Start at -1 so first advance goes to step 0
+    samplesUntilNextStep = 0.0; // Trigger first step immediately
 }
 
-juce::AudioProcessorEditor *PitchVelocityProcessor::createEditor()
+void StepSequencerAudioProcessor::updateFrequency()
 {
-    return new PitchVelocityEditor(*this);
+    auto stepPitch = apvts.getRawParameterValue("step" + juce::String(currentStep))->load();
+    float midiNote = baseNote + stepPitch;
+    targetFrequency = 440.0f * std::pow(2.0f, (midiNote - 69.0f) / 12.0f);
+
+    // If glide is off, snap immediately
+    auto glideEnable = apvts.getRawParameterValue("glide_enable")->load() > 0.5f;
+    if (!glideEnable)
+        currentFrequency = targetFrequency;
 }
 
-void PitchVelocityProcessor::getStateInformation(juce::MemoryBlock &destData)
+double StepSequencerAudioProcessor::calculateStepLength(double sampleRate, double bpm, float rateParam)
 {
-    auto state = parameters.copyState();
+    // Calculate samples per quarter note
+    double samplesPerQuarterNote = (60.0 / bpm) * sampleRate;
+
+    // rateParam: 2.0 = eighth note = 0.5 quarter notes
+    // rateParam: 1.0 = quarter note = 1.0 quarter notes
+    // rateParam: 0.5 = half note = 2.0 quarter notes
+    double quarterNotes = 1.0 / rateParam;
+
+    return samplesPerQuarterNote * quarterNotes;
+}
+
+juce::AudioProcessorEditor *StepSequencerAudioProcessor::createEditor()
+{
+    // Use generic editor which automatically creates UI for all APVTS parameters
+    auto *editor = new juce::GenericAudioProcessorEditor(*this);
+    editor->setSize(400, 600); // Make it taller so all params are visible
+    return editor;
+}
+
+void StepSequencerAudioProcessor::getStateInformation(juce::MemoryBlock &destData)
+{
+    auto state = apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
     copyXmlToBinary(*xml, destData);
 }
 
-void PitchVelocityProcessor::setStateInformation(const void *data, int sizeInBytes)
+void StepSequencerAudioProcessor::setStateInformation(const void *data, int sizeInBytes)
 {
     std::unique_ptr<juce::XmlElement> xmlState(getXmlFromBinary(data, sizeInBytes));
-
     if (xmlState.get() != nullptr)
-    {
-        if (xmlState->hasTagName(parameters.state.getType()))
-        {
-            parameters.replaceState(juce::ValueTree::fromXml(*xmlState));
-        }
-    }
+        if (xmlState->hasTagName(apvts.state.getType()))
+            apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
 }
 
 juce::AudioProcessor *JUCE_CALLTYPE createPluginFilter()
 {
-    return new PitchVelocityProcessor();
+    return new StepSequencerAudioProcessor();
 }
